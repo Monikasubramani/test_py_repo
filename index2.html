@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Banker's Algorithm - Dynamic Model</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+      padding: 20px;
+    }
+    input[type="number"] {
+      width: 50px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+      border-collapse: collapse;
+      padding: 6px;
+    }
+    .btn {
+      padding: 10px 15px;
+      margin: 10px 5px 0 0;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background-color: #0056b3;
+    }
+    .safe {
+      color: green;
+      font-weight: bold;
+    }
+    .unsafe {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Banker's Algorithm - Dynamic Input</h2>
+<label>Number of Processes: <input type="number" id="numProc" min="1" value="3"></label>
+<label>Number of Resources: <input type="number" id="numRes" min="1" value="3"></label>
+<button class="btn" onclick="generateTables()">Generate Input</button>
+<button class="btn" onclick="resetAll()">Reset</button>
+
+<div id="inputTables"></div>
+<div id="result"></div>
+
+<script>
+function generateTables() {
+  const np = parseInt(document.getElementById('numProc').value);
+  const nr = parseInt(document.getElementById('numRes').value);
+  let html = "";
+
+  html += `<h3>Total Instances of all Resources</h3><table><tr>`;
+  for (let j = 0; j < nr; j++) {
+    html += `<td><input type='number' id='total_${j}' value='0'></td>`;
+  }
+  html += `</tr></table>`;
+
+  html += "<h3>Max Matrix</h3><table>";
+  for (let i = 0; i < np; i++) {
+    html += "<tr>";
+    for (let j = 0; j < nr; j++) {
+      html += `<td><input type='number' id='max_${i}_${j}' value='0'></td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+
+  html += "<h3>Allocation Matrix</h3><table>";
+  for (let i = 0; i < np; i++) {
+    html += "<tr>";
+    for (let j = 0; j < nr; j++) {
+      html += `<td><input type='number' id='alloc_${i}_${j}' value='0'></td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+
+  html += "<h3>Request Matrix (For Deadlock Detection)</h3><table>";
+  for (let i = 0; i < np; i++) {
+    html += "<tr>";
+    for (let j = 0; j < nr; j++) {
+      html += `<td><input type='number' id='request_${i}_${j}' value='0'></td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+
+  html += `<h3>Available Resources (Auto-calculated)</h3><table><tr>`;
+  for (let j = 0; j < nr; j++) {
+    html += `<td><input type='number' id='avail_${j}' value='0' readonly></td>`;
+  }
+  html += "</tr></table>";
+
+  html += `<h3>Need Matrix (Auto-calculated)</h3><table id='needMatrix'>`;
+  for (let i = 0; i < np; i++) {
+    html += "<tr>";
+    for (let j = 0; j < nr; j++) {
+      html += `<td><input type='number' id='need_${i}_${j}' value='0' readonly></td>`;
+    }
+    html += "</tr>";
+  }
+  html += `</table>`;
+
+  html += `<button class='btn' onclick='calculateAvailable(${np}, ${nr})'>Calculate Available & Need</button>`;
+  html += `<button class='btn' onclick='runBankers(${np}, ${nr})'>Run Banker's Algorithm</button>`;
+  html += `<button class='btn' onclick='runDeadlockDetection(${np}, ${nr})'>Run Deadlock Detection</button>`;
+
+  document.getElementById("inputTables").innerHTML = html;
+  document.getElementById("result").innerHTML = "";
+}
+
+function calculateAvailable(n, m) {
+  let allocated = Array(m).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      allocated[j] += parseInt(document.getElementById(`alloc_${i}_${j}`).value);
+    }
+  }
+
+  for (let j = 0; j < m; j++) {
+    let total = parseInt(document.getElementById(`total_${j}`).value);
+    if (total < 0) {
+      alert(`Total instances for Resource ${j} must be non-negative`);
+      return;
+    }
+    let available = total - allocated[j];
+    document.getElementById(`avail_${j}`).value = available >= 0 ? available : 0;
+  }
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      const max = parseInt(document.getElementById(`max_${i}_${j}`).value);
+      const alloc = parseInt(document.getElementById(`alloc_${i}_${j}`).value);
+      const need = max - alloc;
+      document.getElementById(`need_${i}_${j}`).value = need >= 0 ? need : 0;
+    }
+  }
+}
+
+function validateInputs(n, m) {
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      const max = parseInt(document.getElementById(`max_${i}_${j}`).value);
+      const alloc = parseInt(document.getElementById(`alloc_${i}_${j}`).value);
+      if (alloc < 0 || max < 0 || alloc > max) {
+        alert(`Invalid input at P${i}, R${j}: Allocation must be ≤ Max and ≥ 0`);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function runBankers(n, m) {
+  if (!validateInputs(n, m)) return;
+
+  let max = Array.from({length: n}, () => Array(m).fill(0));
+  let alloc = Array.from({length: n}, () => Array(m).fill(0));
+  let need = Array.from({length: n}, () => Array(m).fill(0));
+  let avail = Array(m).fill(0);
+  let finish = Array(n).fill(false);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      max[i][j] = parseInt(document.getElementById(`max_${i}_${j}`).value);
+      alloc[i][j] = parseInt(document.getElementById(`alloc_${i}_${j}`).value);
+      need[i][j] = max[i][j] - alloc[i][j];
+    }
+  }
+
+  for (let j = 0; j < m; j++) {
+    avail[j] = parseInt(document.getElementById(`avail_${j}`).value);
+  }
+
+  let work = avail.slice();
+  let safeSeq = [];
+  let count = 0;
+
+  while (count < n) {
+    let found = false;
+    for (let i = 0; i < n; i++) {
+      if (!finish[i]) {
+        let canProceed = true;
+        for (let j = 0; j < m; j++) {
+          if (need[i][j] > work[j]) {
+            canProceed = false;
+            break;
+          }
+        }
+        if (canProceed) {
+          for (let j = 0; j < m; j++) work[j] += alloc[i][j];
+          finish[i] = true;
+          safeSeq.push(`P${i}`);
+          count++;
+          found = true;
+        }
+      }
+    }
+    if (!found) break;
+  }
+
+  const resultDiv = document.getElementById("result");
+  if (safeSeq.length === n) {
+    const msg = `System is in a SAFE state.\nSafe Sequence: ${safeSeq.join(" -> ")}`;
+    resultDiv.innerHTML = `<p class='safe'>✅ ${msg.replace(/\n/g, "<br>")}</p>`;
+    resultDiv.innerHTML += `<button class='btn' onclick='downloadResult(\`${msg}\`)'>Download Result</button>`;
+  } else {
+    const err = "System is NOT in a safe state.";
+    resultDiv.innerHTML = `<p class='unsafe'>❌ ${err}</p>`;
+    resultDiv.innerHTML += `<button class='btn' onclick='downloadResult("${err}")'>Download Result</button>`;
+  }
+}
+
+function runDeadlockDetection(n, m) {
+  let alloc = Array.from({ length: n }, () => Array(m).fill(0));
+  let request = Array.from({ length: n }, () => Array(m).fill(0));
+  let avail = Array(m).fill(0);
+  let finish = Array(n).fill(false);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      alloc[i][j] = parseInt(document.getElementById(`alloc_${i}_${j}`).value);
+      request[i][j] = parseInt(document.getElementById(`request_${i}_${j}`).value);
+    }
+  }
+
+  for (let j = 0; j < m; j++) {
+    avail[j] = parseInt(document.getElementById(`avail_${j}`).value);
+  }
+
+  let work = avail.slice();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < n; i++) {
+      if (!finish[i]) {
+        let canFinish = request[i].every((r, j) => r <= work[j]);
+        if (canFinish) {
+          for (let j = 0; j < m; j++) {
+            work[j] += alloc[i][j];
+          }
+          finish[i] = true;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  const deadlocked = [];
+  for (let i = 0; i < n; i++) {
+    if (!finish[i]) deadlocked.push(`P${i}`);
+  }
+
+  const resultDiv = document.getElementById("result");
+  if (deadlocked.length === 0) {
+    resultDiv.innerHTML = `<p class='safe'>✅ No Deadlock Detected</p>`;
+  } else {
+    const msg = `Deadlock Detected!\nProcesses involved: ${deadlocked.join(", ")}`;
+    resultDiv.innerHTML = `<p class='unsafe'>❌ ${msg.replace(/\n/g, "<br>")}</p>`;
+    resultDiv.innerHTML += `<button class='btn' onclick='downloadResult(\`${msg}\`)'>Download Result</button>`;
+  }
+}
+
+function downloadResult(text) {
+  const blob = new Blob([text], { type: "text/plain" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "bankers_result.txt";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function resetAll() {
+  document.getElementById('numProc').value = 3;
+  document.getElementById('numRes').value = 3;
+  document.getElementById("inputTables").innerHTML = "";
+  document.getElementById("result").innerHTML = "";
+}
+</script>
+
+</body>
+</html>
